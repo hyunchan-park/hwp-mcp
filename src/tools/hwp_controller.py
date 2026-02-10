@@ -8,8 +8,11 @@ import logging
 import win32com.client
 import win32gui
 import win32con
+import win32process
 import time
 import pythoncom
+import threading
+import shutil
 from typing import Optional, List, Dict, Any, Tuple
 
 logger = logging.getLogger("hwp-controller")
@@ -24,6 +27,112 @@ class HwpController:
         self.visible = True
         self.is_hwp_running = False
         self.current_document_path = None
+        self._dialog_watcher_stop_event = threading.Event()
+        self._dialog_watcher_thread = None
+
+    def _dismiss_security_allow_all_dialogs(self) -> bool:
+        """
+        한글 보안 경고(파일 접근 허용) 다이얼로그가 떠 있으면 '모두 허용'을 클릭합니다.
+        WPF/UIA 기반 창일 수 있어 UIA(=pywinauto)를 사용합니다.
+        """
+        try:
+            # 선택적 의존성: pywinauto가 없으면 동작 불가
+            from pywinauto import Desktop
+        except Exception:
+            return False
+
+        pid = self._get_hwp_pid()
+        if not pid:
+            return False
+
+        clicked = False
+        try:
+            desktop = Desktop(backend="uia")
+            for w in desktop.windows():
+                try:
+                    if getattr(w.element_info, "process_id", None) != pid:
+                        continue
+
+                    # 경고 문구가 있는 창만 대상으로 필터링
+                    has_warning = False
+                    try:
+                        for t in w.descendants(control_type="Text"):
+                            name = (t.window_text() or "").strip()
+                            if ("파일에 접근" in name) or ("접근하려는 시도" in name) or ("보안" in name):
+                                has_warning = True
+                                break
+                    except Exception:
+                        has_warning = False
+
+                    if not has_warning:
+                        continue
+
+                    # 버튼 목록에서 "모두 허용"을 찾고 클릭
+                    btns = []
+                    try:
+                        btns = w.descendants(control_type="Button")
+                    except Exception:
+                        btns = []
+
+                    target_btn = None
+                    for b in btns:
+                        txt = (b.window_text() or "").strip()
+                        if "모두 허용" in txt:
+                            target_btn = b
+                            break
+
+                    if not target_btn:
+                        continue
+
+                    try:
+                        target_btn.click_input()
+                    except Exception:
+                        try:
+                            target_btn.invoke()
+                        except Exception:
+                            continue
+
+                    clicked = True
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"UIA 보안 다이얼로그 처리 실패 (무시): {e}")
+
+        return clicked
+
+    def _start_dialog_watcher(self) -> None:
+        """HWP 모달/보안 다이얼로그를 상시 감시/처리합니다."""
+        try:
+            if self._dialog_watcher_thread and self._dialog_watcher_thread.is_alive():
+                return
+        except Exception:
+            pass
+
+        self._dialog_watcher_stop_event.clear()
+
+        def worker():
+            preferred = ["저장 안 함", "모두 허용", "아니오", "No", "취소", "Cancel", "확인", "OK", "예", "Yes"]
+            while not self._dialog_watcher_stop_event.is_set():
+                try:
+                    # Win32 기반 모달 처리(#32770 + 인터넷 문서 종류 등)
+                    self._dismiss_hwp_dialogs(preferred)
+                except Exception:
+                    pass
+                try:
+                    # WPF/UIA 기반 보안 경고 처리(모두 허용)
+                    self._dismiss_security_allow_all_dialogs()
+                except Exception:
+                    pass
+                time.sleep(0.3)
+
+        self._dialog_watcher_thread = threading.Thread(target=worker, daemon=True)
+        self._dialog_watcher_thread.start()
+
+    def _stop_dialog_watcher(self) -> None:
+        try:
+            self._dialog_watcher_stop_event.set()
+        except Exception:
+            pass
 
     def connect(self, visible: bool = True, register_security_module: bool = True) -> bool:
         """
@@ -50,8 +159,16 @@ class HwpController:
             # 보안 모듈 등록 (파일 경로 체크 보안 경고창 방지)
             if register_security_module:
                 try:
-                    # 보안 모듈 DLL 경로 - 실제 파일이 위치한 경로로 수정 필요
-                    module_path = os.path.abspath("D:/hwp-mcp/security_module/FilePathCheckerModuleExample.dll")
+                    # 보안 모듈 DLL 경로 (레포지토리 기준 상대경로)
+                    module_path = os.path.abspath(
+                        os.path.join(
+                            os.path.dirname(__file__),
+                            "..",
+                            "..",
+                            "security_module",
+                            "FilePathCheckerModuleExample.dll",
+                        )
+                    )
                     self.hwp.RegisterModule("FilePathCheckerModuleExample", module_path)
                     print("보안 모듈이 등록되었습니다.")
                 except Exception as e:
@@ -60,6 +177,7 @@ class HwpController:
             self.visible = visible
             self.hwp.XHwpWindows.Item(0).Visible = visible
             self.is_hwp_running = True
+            self._start_dialog_watcher()
             return True
         except Exception as e:
             print(f"한글 프로그램 연결 실패: {e}")
@@ -74,6 +192,7 @@ class HwpController:
         """
         try:
             if self.is_hwp_running:
+                self._stop_dialog_watcher()
                 # HwpObject를 해제합니다
                 self.hwp = None
                 self.is_hwp_running = False
@@ -106,6 +225,110 @@ class HwpController:
             print(f"메시지 박스 모드 설정 실패: {e}")
             return False
 
+    def _get_hwp_pid(self) -> Optional[int]:
+        """현재 연결된 HWP 인스턴스의 프로세스 ID를 가져옵니다."""
+        try:
+            if not self.is_hwp_running or not self.hwp:
+                return None
+            hwnd = self.hwp.XHwpWindows.Item(0).WindowHandle
+            return win32process.GetWindowThreadProcessId(hwnd)[1]
+        except Exception as e:
+            logger.debug(f"HWP PID 조회 실패 (무시): {e}")
+            return None
+
+    def _click_dialog_button_by_text(self, dialog_hwnd: int, preferred_texts: List[str]) -> bool:
+        """대화상자에서 버튼 텍스트로 버튼을 찾아 클릭합니다."""
+        try:
+            found = {"hwnd": None}
+
+            def enum_child(hwnd, _):
+                try:
+                    cls = win32gui.GetClassName(hwnd)
+                    if cls != "Button":
+                        return True
+                    text = win32gui.GetWindowText(hwnd).strip()
+                    if text in preferred_texts:
+                        found["hwnd"] = hwnd
+                        return False
+                except Exception:
+                    pass
+                return True
+
+            win32gui.EnumChildWindows(dialog_hwnd, enum_child, None)
+            if not found["hwnd"]:
+                return False
+
+            # 버튼 클릭
+            win32gui.PostMessage(found["hwnd"], win32con.BM_CLICK, 0, 0)
+            return True
+        except Exception as e:
+            logger.debug(f"버튼 클릭 실패 (무시): {e}")
+            return False
+
+    def _dismiss_hwp_dialogs(self, preferred_button_texts: List[str]) -> bool:
+        """
+        현재 HWP 프로세스에서 뜬 모달 대화상자를 찾아 버튼을 클릭해 닫습니다.
+        (COM 호출이 모달에 막혔을 때의 폴백)
+        """
+        pid = self._get_hwp_pid()
+        if not pid:
+            return False
+
+        dismissed = False
+        WM_CLOSE = 0x0010
+
+        def enum_windows(hwnd, _):
+            nonlocal dismissed
+            try:
+                if not win32gui.IsWindowVisible(hwnd):
+                    return True
+                cls = win32gui.GetClassName(hwnd)
+                win_pid = win32process.GetWindowThreadProcessId(hwnd)[1]
+                if win_pid != pid:
+                    return True
+
+                title = win32gui.GetWindowText(hwnd) or ""
+
+                # WPF 기반 모달(자식 컨트롤이 잡히지 않는) 창 폴백 처리
+                # - HWP에서 HWPX/웹 관련 동작 시 뜨는 경우가 있으며, COM 호출을 막을 수 있음
+                if title.strip() == "인터넷 문서 종류":
+                    win32gui.PostMessage(hwnd, WM_CLOSE, 0, 0)
+                    dismissed = True
+                    return True
+
+                # 일반 다이얼로그(#32770) 처리: 버튼 텍스트로 클릭
+                if cls != "#32770":
+                    return True
+
+                # 우선순위 버튼을 찾아 클릭
+                if self._click_dialog_button_by_text(hwnd, preferred_button_texts):
+                    dismissed = True
+            except Exception:
+                pass
+            return True
+
+        win32gui.EnumWindows(enum_windows, None)
+        return dismissed
+
+    def _run_with_dialog_watcher(self, fn, preferred_button_texts: List[str], timeout_seconds: float = 10.0):
+        """
+        fn 실행 중 HWP 모달 대화상자를 감시/자동 클릭합니다.
+        """
+        stop_event = threading.Event()
+
+        def worker():
+            end = time.time() + timeout_seconds
+            while (not stop_event.is_set()) and (time.time() < end):
+                self._dismiss_hwp_dialogs(preferred_button_texts)
+                time.sleep(0.2)
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        try:
+            return fn()
+        finally:
+            stop_event.set()
+
     def close_document(self, save: bool = False, suppress_dialog: bool = True) -> bool:
         """
         현재 문서를 닫습니다.
@@ -133,7 +356,12 @@ class HwpController:
             if save:
                 self.hwp.HAction.Run("FileSave")
 
-            result = self.hwp.HAction.Run("FileClose")
+            def _do_close():
+                return self.hwp.HAction.Run("FileClose")
+
+            # SetMessageBoxMode가 못 막는 모달 다이얼로그(저장 여부 등) 대비 워처 실행
+            preferred = ["저장 안 함", "아니오", "No", "Don't Save", "OK", "확인"]
+            result = self._run_with_dialog_watcher(_do_close, preferred, timeout_seconds=12.0)
             self.current_document_path = None
 
             # 메시지 박스 모드 복원
@@ -175,7 +403,11 @@ class HwpController:
             if save:
                 self.hwp.HAction.Run("FileSaveAll")
 
-            result = self.hwp.HAction.Run("FileCloseAll")
+            def _do_close_all():
+                return self.hwp.HAction.Run("FileCloseAll")
+
+            preferred = ["저장 안 함", "아니오", "No", "Don't Save", "OK", "확인"]
+            result = self._run_with_dialog_watcher(_do_close_all, preferred, timeout_seconds=20.0)
             self.current_document_path = None
 
             # 메시지 박스 모드 복원
@@ -452,12 +684,31 @@ class HwpController:
             print(f"[DEBUG] Opening document: {abs_path}")
             print(f"[DEBUG] File exists: {os.path.exists(abs_path)}")
 
-            # Use HAction with FileOpen for reliable file opening
-            pset = self.hwp.HParameterSet.HFileOpenSave
-            self.hwp.HAction.GetDefault("FileOpen", pset.HSet)
-            pset.filename = abs_path
-            pset.Format = "HWP"
-            result = self.hwp.HAction.Execute("FileOpen", pset.HSet)
+            preferred = ["확인", "OK", "예", "Yes", "취소", "Cancel"]
+            ext = os.path.splitext(abs_path)[1].lower()
+
+            def _do_open():
+                # Use HAction with FileOpen for reliable file opening
+                pset = self.hwp.HParameterSet.HFileOpenSave
+                self.hwp.HAction.GetDefault("FileOpen", pset.HSet)
+                pset.filename = abs_path
+                if ext == ".hwpx":
+                    pset.Format = "HWPX"
+                else:
+                    pset.Format = "HWP"
+
+                result_inner = self.hwp.HAction.Execute("FileOpen", pset.HSet)
+
+                # 일부 환경에서는 Format 강제 지정 시 실패할 수 있어 폴백 시도
+                if (not result_inner) and ext == ".hwpx":
+                    try:
+                        pset.Format = ""
+                        result_inner = self.hwp.HAction.Execute("FileOpen", pset.HSet)
+                    except Exception as e:
+                        logger.debug(f"HWPX 폴백 열기 실패 (무시): {e}")
+                return result_inner
+
+            result = self._run_with_dialog_watcher(_do_open, preferred, timeout_seconds=20.0)
             print(f"[DEBUG] FileOpen result: {result}")
             if result:
                 self.current_document_path = abs_path
@@ -498,6 +749,86 @@ class HwpController:
             return True
         except Exception as e:
             print(f"문서 저장 실패: {e}")
+            return False
+
+    def save_as_html(self, file_path: str) -> bool:
+        """
+        현재 문서를 HTML로 '다른 이름으로 저장' 합니다.
+
+        Args:
+            file_path (str): 저장할 파일 경로 (.html 또는 .htm 권장)
+
+        Returns:
+            bool: 저장 성공 여부
+        """
+        try:
+            if not self.is_hwp_running:
+                return False
+
+            if not file_path:
+                return False
+
+            abs_path = os.path.abspath(file_path)
+            if not abs_path.lower().endswith((".html", ".htm")):
+                abs_path = abs_path + ".html"
+
+            out_dir = os.path.dirname(abs_path)
+            if out_dir and not os.path.exists(out_dir):
+                os.makedirs(out_dir, exist_ok=True)
+
+            # COM SaveAs 자체는 안정적이지만, 일부 경로(프로젝트 폴더 등)로 직접 저장할 때
+            # HWP가 보안/확인 UI에서 멈추는 경우가 있어 임시 폴더로 저장 후 복사합니다.
+            temp_dir = os.environ.get("TEMP") or os.environ.get("TMP") or r"C:\temp"
+            temp_dir = os.path.abspath(temp_dir)
+            os.makedirs(temp_dir, exist_ok=True)
+
+            out_basename = os.path.basename(abs_path)
+            out_stem = os.path.splitext(out_basename)[0]
+            temp_path = os.path.join(temp_dir, out_basename)
+
+            # temp_dir 내 동일 stem 아티팩트 정리
+            try:
+                for name in os.listdir(temp_dir):
+                    if not name.lower().startswith(out_stem.lower()):
+                        continue
+                    full = os.path.join(temp_dir, name)
+                    try:
+                        if os.path.isdir(full):
+                            shutil.rmtree(full, ignore_errors=True)
+                        else:
+                            os.remove(full)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # 1) 임시 폴더에 저장
+            self.hwp.SaveAs(temp_path, "HTML", "")
+            if not os.path.exists(temp_path):
+                return False
+
+            # 2) 목적지로 복사 (temp_dir == out_dir이면 그대로 사용)
+            if os.path.abspath(out_dir).lower() == os.path.abspath(temp_dir).lower():
+                return True
+
+            for name in os.listdir(temp_dir):
+                if not name.lower().startswith(out_stem.lower()):
+                    continue
+                src = os.path.join(temp_dir, name)
+                dst = os.path.join(out_dir, name)
+                try:
+                    if os.path.isdir(src):
+                        if os.path.exists(dst):
+                            shutil.rmtree(dst, ignore_errors=True)
+                        shutil.copytree(src, dst)
+                    else:
+                        shutil.copy2(src, dst)
+                except Exception as e:
+                    logger.debug(f"HTML 아티팩트 복사 실패 (무시): {e}")
+
+            return bool(os.path.exists(abs_path))
+        except Exception as e:
+            print(f"HTML 저장 실패: {e}")
             return False
 
     def insert_text(self, text: str, preserve_linebreaks: bool = True) -> bool:

@@ -325,6 +325,40 @@ def hwp_save(path: str = None) -> str:
         logger.error(f"Error saving document: {str(e)}", exc_info=True)
         return f"Error: {str(e)}"
 
+
+@mcp.tool()
+def hwp_save_as_html(path: str) -> str:
+    """Save the current HWP document as HTML (Save As)."""
+    hwp = None
+    try:
+        if not path:
+            return "Error: File path is required"
+
+        hwp = get_hwp_controller()
+        if not hwp:
+            return "Error: Failed to connect to HWP program"
+
+        # 가능한 한 대화상자 없이 진행 (확인 자동 클릭)
+        try:
+            hwp.set_message_box_mode(0x00010000)
+        except Exception as e:
+            logger.debug(f"SetMessageBoxMode 실패 (무시): {e}")
+
+        if hwp.save_as_html(path):
+            logger.info(f"Successfully saved document as HTML to: {path}")
+            return f"Document saved as HTML to: {path}"
+        else:
+            return "Error: Failed to save document as HTML"
+    except Exception as e:
+        logger.error(f"Error saving document as HTML: {str(e)}", exc_info=True)
+        return f"Error: {str(e)}"
+    finally:
+        try:
+            if hwp:
+                hwp.set_message_box_mode(0x00000000)
+        except Exception:
+            pass
+
 @mcp.tool()
 def hwp_insert_text(text: str, preserve_linebreaks: bool = True) -> str:
     """Insert text at the current cursor position."""

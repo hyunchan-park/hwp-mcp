@@ -1,0 +1,48 @@
+2026-02-09 22:17:01,780 - hwp-mcp-stdio-server - INFO - FastMCP successfully imported
+2026-02-09 22:17:01,833 - hwp-mcp-stdio-server - INFO - HwpController imported successfully
+2026-02-09 22:17:01,840 - hwp-mcp-stdio-server - INFO - HwpTableTools imported successfully
+2026-02-09 22:17:22,756 - hwp-mcp-stdio-server - INFO - FastMCP successfully imported
+2026-02-09 22:17:22,808 - hwp-mcp-stdio-server - INFO - HwpController imported successfully
+2026-02-09 22:17:22,809 - hwp-mcp-stdio-server - INFO - HwpTableTools imported successfully
+2026-02-09 22:17:22,832 - hwp-mcp-stdio-server - INFO - ���� �׽�Ʈ �Լ� ȣ���: �޽��� - ��
+2026-02-09 22:17:22,832 - hwp-mcp-stdio-server - INFO - ���� �׽�Ʈ �Լ� ȣ���: �޽��� - ��
+2026-02-09 22:17:22,832 - hwp-mcp-stdio-server - INFO - ���� �׽�Ʈ �Լ� ȣ���: �޽��� - hello
+2026-02-09 22:25:23,715 - hwp-mcp-stdio-server - INFO - FastMCP successfully imported
+2026-02-09 22:25:23,815 - hwp-mcp-stdio-server - INFO - HwpController imported successfully
+2026-02-09 22:25:23,817 - hwp-mcp-stdio-server - INFO - HwpTableTools imported successfully
+2026-02-09 22:25:23,845 - hwp-mcp-stdio-server - INFO - Starting HWP MCP stdio server
+2026-02-09 22:26:39,714 - hwp-mcp-stdio-server - INFO - FastMCP successfully imported
+2026-02-09 22:26:39,803 - hwp-mcp-stdio-server - INFO - HwpController imported successfully
+2026-02-09 22:26:39,804 - hwp-mcp-stdio-server - INFO - HwpTableTools imported successfully
+2026-02-09 22:26:39,839 - hwp-mcp-stdio-server - INFO - Creating HwpController instance...
+2026-02-09 22:26:39,841 - hwp-controller - WARNING - GetActiveObject 실패: (-2147221021, '작업을 사용할 수 없습니다.', None, None)
+2026-02-09 22:26:39,991 - hwp-mcp-stdio-server - INFO - FastMCP successfully imported
+2026-02-09 22:26:40,060 - hwp-mcp-stdio-server - INFO - HwpController imported successfully
+2026-02-09 22:26:40,061 - hwp-mcp-stdio-server - INFO - HwpTableTools imported successfully
+2026-02-09 22:26:40,098 - hwp-mcp-stdio-server - INFO - Creating HwpController instance...
+2026-02-09 22:26:40,099 - hwp-controller - WARNING - GetActiveObject 실패: (-2147221021, '작업을 사용할 수 없습니다.', None, None)
+2026-02-09 22:26:43,008 - hwp-controller - INFO - Dispatch로 HWP에 연결됨 (새 창이 열렸을 수 있음)
+2026-02-09 22:26:43,116 - hwp-mcp-stdio-server - INFO - Successfully connected to HWP program
+2026-02-09 22:26:46,137 - hwp-controller - INFO - Dispatch로 HWP에 연결됨 (새 창이 열렸을 수 있음)
+2026-02-09 22:26:46,248 - hwp-mcp-stdio-server - INFO - Successfully connected to HWP program
+2026-02-10 08:55:50,250 - hwp-mcp-stdio-server - INFO - FastMCP successfully imported
+2026-02-10 08:55:50,294 - hwp-mcp-stdio-server - INFO - HwpController imported successfully
+2026-02-10 08:55:50,296 - hwp-mcp-stdio-server - INFO - HwpTableTools imported successfully
+2026-02-10 08:55:50,317 - hwp-mcp-stdio-server - INFO - Creating HwpController instance...
+2026-02-10 08:55:50,318 - hwp-controller - WARNING - GetActiveObject 실패: (-2147221021, '작업을 사용할 수 없습니다.', None, None)
+2026-02-10 08:55:53,196 - hwp-controller - INFO - Dispatch로 HWP에 연결됨 (새 창이 열렸을 수 있음)
+2026-02-10 08:55:53,286 - hwp-mcp-stdio-server - INFO - Successfully connected to HWP program
+2026-02-10 08:55:53,788 - hwp-mcp-stdio-server - INFO - Successfully created new document
+2026-02-10 08:55:53,829 - hwp-mcp-stdio-server - INFO - Successfully inserted text
+2026-02-10 08:56:03,795 - hwp-mcp-stdio-server - INFO - Successfully saved document as HTML to: C:/temp/hwp_mcp_1770681353.html
+2026-02-10 08:56:03,989 - hwp-mcp-stdio-server - INFO - Successfully closed document (save=False, suppress_dialog=True)
+2026-02-10 09:05:59,987 - hwp-mcp-stdio-server - INFO - FastMCP successfully imported
+2026-02-10 09:06:00,041 - hwp-mcp-stdio-server - INFO - HwpController imported successfully
+2026-02-10 09:06:00,042 - hwp-mcp-stdio-server - INFO - HwpTableTools imported successfully
+2026-02-10 09:06:00,063 - hwp-mcp-stdio-server - INFO - Creating HwpController instance...
+2026-02-10 09:06:00,064 - hwp-controller - WARNING - GetActiveObject 실패: (-2147221021, '작업을 사용할 수 없습니다.', None, None)
+2026-02-10 09:06:02,847 - hwp-controller - INFO - Dispatch로 HWP에 연결됨 (새 창이 열렸을 수 있음)
+2026-02-10 09:06:02,919 - hwp-mcp-stdio-server - INFO - Successfully connected to HWP program
+2026-02-10 09:06:03,441 - hwp-mcp-stdio-server - INFO - Successfully created new document
+2026-02-10 09:06:03,471 - hwp-mcp-stdio-server - INFO - Successfully inserted text
+2026-02-10 09:06:03,852 - hwp-mcp-stdio-server - INFO - Successfully closed document (save=False, suppress_dialog=True)

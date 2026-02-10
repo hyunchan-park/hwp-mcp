@@ -41,6 +41,54 @@ pip install mcp
 
 ## 사용 방법
 
+### (터미널) HWPX → HTML 일괄 변환 스크립트
+
+이 프로젝트는 MCP 서버로도 사용할 수 있지만, 변환 작업은 **Cursor/MCP 없이도** 아래 스크립트를 터미널에서 직접 실행할 수 있습니다.
+
+- **현재 폴더의 모든 `*.hwpx` 변환 (동일 폴더/동일 파일명 `.html`)**
+
+```bash
+cd hwp-mcp
+python -X utf8 .\convert_hwpx_to_html.py
+```
+
+- **특정 파일만 변환**
+
+```bash
+python -X utf8 .\convert_hwpx_to_html.py .\L2-proposal-2.hwpx .\L2-proposal-3.hwpx
+```
+
+- **폴더를 인자로 주고 그 폴더의 `*.hwpx` 변환**
+
+```bash
+python -X utf8 .\convert_hwpx_to_html.py C:\path\to\folder
+```
+
+- **폴더를 재귀로 변환**
+
+```bash
+python -X utf8 .\convert_hwpx_to_html.py C:\path\to\folder --recursive
+```
+
+요구사항:
+- Windows
+- 한글(HWP) 설치
+- `pip install -r requirements.txt`
+
+### (GUI) HWPX → HTML 변환기
+
+Cursor/MCP 없이도 실행 가능한 간단한 GUI 변환기입니다.
+
+- 실행(터미널):
+
+```bash
+cd hwp-mcp
+python -X utf8 .\convert_hwpx_to_html_gui.py
+```
+
+- 실행(더블클릭):
+  - `run_convert_gui.bat`
+
 ### Claude와 함께 사용하기
 
 Claude 데스크톱 설정 파일에 다음과 같이 HWP-MCP 서버를 등록하세요:

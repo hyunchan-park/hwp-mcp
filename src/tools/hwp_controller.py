@@ -30,6 +30,66 @@ class HwpController:
         self._dialog_watcher_stop_event = threading.Event()
         self._dialog_watcher_thread = None
 
+    def _dismiss_internet_document_kind_dialog(self) -> bool:
+        """
+        HTML 저장 시 뜰 수 있는 '인터넷 문서 종류' 다이얼로그를 자동으로 확인(OK) 처리합니다.
+        - 사용자가 마지막으로 선택했던 형식을 그대로 사용하도록, 별도의 옵션 변경은 하지 않습니다.
+        - Win32 자식 컨트롤 열거로 버튼을 잡기 어려운 경우가 있어 UIA(=pywinauto)를 사용합니다.
+        """
+        try:
+            from pywinauto import Desktop
+        except Exception:
+            return False
+
+        pid = self._get_hwp_pid()
+        if not pid:
+            return False
+
+        clicked = False
+        try:
+            desktop = Desktop(backend="uia")
+            for w in desktop.windows():
+                try:
+                    if getattr(w.element_info, "process_id", None) != pid:
+                        continue
+
+                    title = (w.window_text() or "").strip()
+                    if title != "인터넷 문서 종류":
+                        continue
+
+                    # 가능한 버튼 텍스트들: "확인", "OK"
+                    btns = []
+                    try:
+                        btns = w.descendants(control_type="Button")
+                    except Exception:
+                        btns = []
+
+                    target_btn = None
+                    for b in btns:
+                        txt = (b.window_text() or "").strip()
+                        if txt in ("확인", "OK"):
+                            target_btn = b
+                            break
+
+                    if not target_btn:
+                        continue
+
+                    try:
+                        target_btn.click_input()
+                    except Exception:
+                        try:
+                            target_btn.invoke()
+                        except Exception:
+                            continue
+
+                    clicked = True
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"UIA 인터넷 문서 종류 다이얼로그 처리 실패 (무시): {e}")
+
+        return clicked
+
     def _dismiss_security_allow_all_dialogs(self) -> bool:
         """
         한글 보안 경고(파일 접근 허용) 다이얼로그가 떠 있으면 '모두 허용'을 클릭합니다.
@@ -111,16 +171,15 @@ class HwpController:
         self._dialog_watcher_stop_event.clear()
 
         def worker():
-            preferred = ["저장 안 함", "모두 허용", "아니오", "No", "취소", "Cancel", "확인", "OK", "예", "Yes"]
             while not self._dialog_watcher_stop_event.is_set():
-                try:
-                    # Win32 기반 모달 처리(#32770 + 인터넷 문서 종류 등)
-                    self._dismiss_hwp_dialogs(preferred)
-                except Exception:
-                    pass
                 try:
                     # WPF/UIA 기반 보안 경고 처리(모두 허용)
                     self._dismiss_security_allow_all_dialogs()
+                except Exception:
+                    pass
+                try:
+                    # HTML 저장 시 뜰 수 있는 '인터넷 문서 종류' 다이얼로그 확인 처리
+                    self._dismiss_internet_document_kind_dialog()
                 except Exception:
                     pass
                 time.sleep(0.3)
@@ -275,7 +334,6 @@ class HwpController:
             return False
 
         dismissed = False
-        WM_CLOSE = 0x0010
 
         def enum_windows(hwnd, _):
             nonlocal dismissed
@@ -288,13 +346,6 @@ class HwpController:
                     return True
 
                 title = win32gui.GetWindowText(hwnd) or ""
-
-                # WPF 기반 모달(자식 컨트롤이 잡히지 않는) 창 폴백 처리
-                # - HWP에서 HWPX/웹 관련 동작 시 뜨는 경우가 있으며, COM 호출을 막을 수 있음
-                if title.strip() == "인터넷 문서 종류":
-                    win32gui.PostMessage(hwnd, WM_CLOSE, 0, 0)
-                    dismissed = True
-                    return True
 
                 # 일반 다이얼로그(#32770) 처리: 버튼 텍스트로 클릭
                 if cls != "#32770":
@@ -684,7 +735,8 @@ class HwpController:
             print(f"[DEBUG] Opening document: {abs_path}")
             print(f"[DEBUG] File exists: {os.path.exists(abs_path)}")
 
-            preferred = ["확인", "OK", "예", "Yes", "취소", "Cancel"]
+            # 자동화 중 임의로 '취소'를 눌러 흐름을 깨지 않도록 Cancel 계열은 제외합니다.
+            preferred = ["확인", "OK", "예", "Yes"]
             ext = os.path.splitext(abs_path)[1].lower()
 
             def _do_open():
@@ -776,59 +828,52 @@ class HwpController:
             if out_dir and not os.path.exists(out_dir):
                 os.makedirs(out_dir, exist_ok=True)
 
-            # COM SaveAs 자체는 안정적이지만, 일부 경로(프로젝트 폴더 등)로 직접 저장할 때
-            # HWP가 보안/확인 UI에서 멈추는 경우가 있어 임시 폴더로 저장 후 복사합니다.
-            temp_dir = os.environ.get("TEMP") or os.environ.get("TMP") or r"C:\temp"
-            temp_dir = os.path.abspath(temp_dir)
-            os.makedirs(temp_dir, exist_ok=True)
+            # 사용자가 원하는 원칙: HWP가 제공하는 '다른 이름으로 저장(HTML)' 결과를 그대로 사용
+            # (임시폴더 저장, HTML/CSS 주입, 이미지 링크 치환 등의 후처리 없음)
+            def _do_save():
+                return self.hwp.SaveAs(abs_path, "HTML", "")
 
-            out_basename = os.path.basename(abs_path)
-            out_stem = os.path.splitext(out_basename)[0]
-            temp_path = os.path.join(temp_dir, out_basename)
-
-            # temp_dir 내 동일 stem 아티팩트 정리
-            try:
-                for name in os.listdir(temp_dir):
-                    if not name.lower().startswith(out_stem.lower()):
-                        continue
-                    full = os.path.join(temp_dir, name)
-                    try:
-                        if os.path.isdir(full):
-                            shutil.rmtree(full, ignore_errors=True)
-                        else:
-                            os.remove(full)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            # 1) 임시 폴더에 저장
-            self.hwp.SaveAs(temp_path, "HTML", "")
-            if not os.path.exists(temp_path):
-                return False
-
-            # 2) 목적지로 복사 (temp_dir == out_dir이면 그대로 사용)
-            if os.path.abspath(out_dir).lower() == os.path.abspath(temp_dir).lower():
-                return True
-
-            for name in os.listdir(temp_dir):
-                if not name.lower().startswith(out_stem.lower()):
-                    continue
-                src = os.path.join(temp_dir, name)
-                dst = os.path.join(out_dir, name)
-                try:
-                    if os.path.isdir(src):
-                        if os.path.exists(dst):
-                            shutil.rmtree(dst, ignore_errors=True)
-                        shutil.copytree(src, dst)
-                    else:
-                        shutil.copy2(src, dst)
-                except Exception as e:
-                    logger.debug(f"HTML 아티팩트 복사 실패 (무시): {e}")
-
-            return bool(os.path.exists(abs_path))
+            preferred = ["확인", "OK", "예", "Yes"]
+            result = self._run_with_dialog_watcher(_do_save, preferred, timeout_seconds=30.0)
+            return bool(result) and os.path.exists(abs_path)
         except Exception as e:
             print(f"HTML 저장 실패: {e}")
+            return False
+
+    def save_as_pdf(self, file_path: str) -> bool:
+        """
+        현재 문서를 PDF로 저장합니다.
+        한글의 '파일 > PDF로 저장하기' 기능을 COM 자동화로 호출합니다.
+
+        Args:
+            file_path (str): 저장할 파일 경로 (.pdf 권장)
+
+        Returns:
+            bool: 저장 성공 여부
+        """
+        try:
+            if not self.is_hwp_running:
+                return False
+
+            if not file_path:
+                return False
+
+            abs_path = os.path.abspath(file_path)
+            if not abs_path.lower().endswith(".pdf"):
+                abs_path = abs_path + ".pdf"
+
+            out_dir = os.path.dirname(abs_path)
+            if out_dir and not os.path.exists(out_dir):
+                os.makedirs(out_dir, exist_ok=True)
+
+            def _do_save():
+                return self.hwp.SaveAs(abs_path, "PDF", "")
+
+            preferred = ["확인", "OK", "예", "Yes"]
+            result = self._run_with_dialog_watcher(_do_save, preferred, timeout_seconds=30.0)
+            return bool(result) and os.path.exists(abs_path)
+        except Exception as e:
+            print(f"PDF 저장 실패: {e}")
             return False
 
     def insert_text(self, text: str, preserve_linebreaks: bool = True) -> bool:

@@ -46,3 +46,13 @@
 2026-02-10 09:06:03,441 - hwp-mcp-stdio-server - INFO - Successfully created new document
 2026-02-10 09:06:03,471 - hwp-mcp-stdio-server - INFO - Successfully inserted text
 2026-02-10 09:06:03,852 - hwp-mcp-stdio-server - INFO - Successfully closed document (save=False, suppress_dialog=True)
+2026-02-10 21:32:37,408 - hwp-mcp-stdio-server - INFO - FastMCP successfully imported
+2026-02-10 21:32:37,532 - hwp-mcp-stdio-server - INFO - HwpController imported successfully
+2026-02-10 21:32:37,534 - hwp-mcp-stdio-server - INFO - HwpTableTools imported successfully
+2026-02-10 21:32:37,558 - hwp-mcp-stdio-server - INFO - Creating HwpController instance...
+2026-02-10 21:32:37,560 - hwp-controller - WARNING - GetActiveObject 실패: (-2147221021, '작업을 사용할 수 없습니다.', None, None)
+2026-02-10 21:32:40,806 - hwp-controller - INFO - Dispatch로 HWP에 연결됨 (새 창이 열렸을 수 있음)
+2026-02-10 21:32:40,866 - hwp-mcp-stdio-server - INFO - Successfully connected to HWP program
+2026-02-10 21:32:41,507 - hwp-mcp-stdio-server - INFO - Successfully opened document: C:\\github\\hwp-mcp\\L2-proposal-2.hwpx
+2026-02-10 21:32:41,993 - hwp-mcp-stdio-server - INFO - Successfully saved document as HTML to: C:\\github\\hwp-mcp\\L2-proposal-2.html
+2026-02-10 21:32:42,156 - hwp-mcp-stdio-server - INFO - Successfully closed document (save=False, suppress_dialog=True)

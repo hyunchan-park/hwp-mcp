@@ -75,6 +75,10 @@ python -X utf8 .\convert_hwpx_to_html.py C:\path\to\folder --recursive
 - 한글(HWP) 설치
 - `pip install -r requirements.txt`
 
+출력:
+- `문서명.html`
+- 이미지가 포함된 경우 같은 폴더에 `문서명_files\` 폴더가 생성될 수 있습니다.
+
 ### (GUI) HWPX → HTML 변환기
 
 Cursor/MCP 없이도 실행 가능한 간단한 GUI 변환기입니다.

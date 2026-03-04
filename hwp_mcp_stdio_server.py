@@ -9,6 +9,10 @@ import logging
 import ssl
 from threading import Thread
 import time
+import re
+import shutil
+from pathlib import Path
+from urllib.parse import unquote
 
 # Configure logging
 logging.basicConfig(
@@ -83,6 +87,74 @@ mcp = FastMCP(
 hwp_controller = None
 # Global HWP table tools instance
 hwp_table_tools = None
+
+
+def _localize_exported_html_images(html_path: str) -> None:
+    """
+    HWP가 HTML 내보내기 시 file:///C:\\Temp\\PICxxxx.png 같은 절대경로로 이미지를 참조하는 경우가 있어,
+    HTML 옆의 <stem>_files 폴더로 복사 후 상대경로로 치환합니다.
+    (MCP 경로에서도 항상 동일 결과가 나오도록 서버에서 한 번 더 보정)
+    """
+    try:
+        if not html_path:
+            return
+        abs_path = os.path.abspath(html_path)
+        if not os.path.exists(abs_path):
+            return
+
+        out_dir = os.path.dirname(abs_path)
+        stem = os.path.splitext(os.path.basename(abs_path))[0]
+        assets_dir = os.path.join(out_dir, f"{stem}_files")
+
+        raw = Path(abs_path).read_bytes()
+        encoding_used = None
+        text = None
+        for enc in ("utf-8-sig", "utf-8", "cp949", "euc-kr", "latin1"):
+            try:
+                text = raw.decode(enc)
+                encoding_used = enc
+                break
+            except Exception:
+                continue
+        if text is None:
+            return
+
+        # src="file:///c:\Temp\PICxxxx.png" / src='file:///C:/Temp/PICxxxx.png'
+        pat = re.compile(r"""src\s*=\s*(['"])(file:///[^'"]+)\1""", re.IGNORECASE)
+        replacements: dict[str, str] = {}
+
+        for m in pat.finditer(text):
+            uri = m.group(2)
+            local_part = uri[len("file:///") :]
+            local_part = unquote(local_part)
+            while local_part.startswith("/"):
+                local_part = local_part[1:]
+            local_path = local_part.replace("/", "\\")
+
+            if len(local_path) < 3 or local_path[1:3] != ":\\":
+                continue
+            if not os.path.exists(local_path):
+                continue
+
+            os.makedirs(assets_dir, exist_ok=True)
+            basename = os.path.basename(local_path)
+            dst_path = os.path.join(assets_dir, basename)
+            try:
+                shutil.copy2(local_path, dst_path)
+            except Exception:
+                continue
+
+            replacements[uri] = f"{stem}_files/{basename}"
+
+        if not replacements:
+            return
+
+        for src_uri, rel in replacements.items():
+            text = text.replace(src_uri, rel)
+
+        Path(abs_path).write_bytes(text.encode(encoding_used or "utf-8", errors="replace"))
+    except Exception as e:
+        logger.debug(f"HTML 이미지 로컬라이즈 실패 (무시): {e}")
 
 def get_hwp_controller():
     """Get or create HwpController instance. Auto-reconnects if connection is lost."""
